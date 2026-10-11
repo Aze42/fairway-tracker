@@ -29,6 +29,13 @@ function cacheSet(k, v) {
   } catch { /* ignore */ }
 }
 
+const LAST_KEY = 'fairway.apiLast';
+function setLast(o) { try { localStorage.setItem(LAST_KEY, JSON.stringify(o)); } catch { /* ignore */ } }
+// Text the user can paste to the developer when something looks wrong. Never contains the API key.
+export function lastApiDebug() {
+  try { const o = JSON.parse(localStorage.getItem(LAST_KEY) || 'null'); return o ? JSON.stringify(o, null, 1) : ''; } catch { return ''; }
+}
+
 async function call(path, key) {
   const hit = cacheGet(path);
   if (hit) return hit;
@@ -36,13 +43,17 @@ async function call(path, key) {
   let res;
   try {
     res = await fetch(BASE + path, { headers: { Accept: 'application/json', Authorization: 'Key ' + key } });
-  } catch {
+  } catch (e) {
+    setLast({ request: path, error: String(e), note: 'network or CORS failure' });
     throw new Error(t('Could not reach GolfCourseAPI. Check your connection. If it keeps failing, the service may block requests from browsers.'));
   }
+  const text = await res.text();
+  setLast({ request: path, status: res.status, body: text.slice(0, 15000) });
   if (res.status === 401 || res.status === 403) throw new Error(t('Invalid API key. Check it in Settings.'));
   if (res.status === 429) throw new Error(t('Daily request limit reached (35 per day on the free plan). Try again tomorrow.'));
   if (!res.ok) throw new Error(t('GolfCourseAPI error') + ' (' + res.status + ')');
-  const data = await res.json();
+  let data;
+  try { data = JSON.parse(text); } catch { throw new Error(t('GolfCourseAPI error') + ' (invalid response)'); }
   cacheSet(path, data);
   return data;
 }

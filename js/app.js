@@ -2,7 +2,9 @@ import * as DB from './db.js';
 import { esc, uid, haversine, toDisp, fromDisp, todayISO, fmtDate, signed, pct, avg } from './util.js';
 import { holeSvg } from './hole-svg.js';
 import { searchCourses, fetchCourse } from './osm.js';
-import { searchApi, getApiCourse, courseFromTee, usageToday, DAILY_LIMIT } from './api.js';
+import { searchApi, getApiCourse, courseFromTee, usageToday, lastApiDebug, DAILY_LIMIT } from './api.js';
+
+const APP_VERSION = 5;
 import { played, holeStats, roundStats, aggregate } from './stats.js';
 import { t, setLang, detectLang, plural, DEFAULT_CLUBS } from './i18n.js';
 
@@ -32,7 +34,7 @@ const S = {
   hi: 0, draft: { lie: 'tee', club: '', dist: '', pos: null }, showMap: false, toGreen: '',
   start: { courseId: '', date: todayISO(), part: 'all' },
   edit: null, search: { q: '', results: null, busy: '', err: '', src: 'osm', rsrc: 'osm', tees: null, apiCourse: null },
-  detailId: null, statsCourse: '', dbError: '',
+  detailId: null, statsCourse: '', dbError: '', apiDebug: '',
 };
 
 const $main = document.getElementById('main');
@@ -349,7 +351,9 @@ function viewSettings() {
     <h2>${t('Language')}</h2><div class="card"><div class="chips">${[['en', 'English'], ['fr', 'Français']].map(([k, l]) => `<button class="chip ${S.set.lang === k ? 'on' : ''}" data-a="setLang" data-v="${k}">${l}</button>`).join('')}</div></div>
     <h2>${t('Course database')}</h2><div class="card"><p class="muted small" style="margin-top:0">${t('Optional. A free key from golfcourseapi.com lets you search a larger course database. The key stays on this device only and is not included in backups.')}</p>
       <input type="password" autocomplete="off" autocapitalize="off" spellcheck="false" data-i="apiKey" value="${esc(S.set.apiKey || '')}" placeholder="${t('API key')}" aria-label="${t('API key')}">
-      ${S.set.apiKey ? `<p class="muted small" style="margin-bottom:0">${t('Requests used today (approximate, this device)')}: ${usageToday()} / ${DAILY_LIMIT}</p>` : ''}</div>
+      ${S.set.apiKey ? `<p class="muted small" style="margin-bottom:0">${t('Requests used today (approximate, this device)')}: ${usageToday()} / ${DAILY_LIMIT}</p>
+        <button class="btn-sm" style="margin-top:10px" data-a="copyApiDebug">${t('Copy last API response')}</button>
+        ${S.apiDebug ? `<textarea readonly style="margin-top:10px;font:12px ui-monospace,monospace;min-height:140px" aria-label="${t('Copy last API response')}">${esc(S.apiDebug)}</textarea>` : ''}` : ''}</div>
     <h2>${t('Units')}</h2><div class="card"><div class="chips">${[['m', t('Metres')], ['yd', t('Yards')]].map(([k, l]) => `<button class="chip ${unit() === k ? 'on' : ''}" data-a="setUnit" data-v="${k}">${l}</button>`).join('')}</div></div>
     <h2>${t('Clubs in my bag')}</h2><div class="card"><textarea data-i="clubs" aria-label="${t('Clubs')}">${esc(clubs().join(', '))}</textarea><p class="muted small">${t('Separate with commas. They appear as quick buttons when you add a shot.')}</p></div>
     <h2>${t('Backup')}</h2><div class="card stack">
@@ -360,7 +364,8 @@ function viewSettings() {
       <label class="btn btn-block" style="display:grid;place-items:center">${t('Import backup')}<input type="file" accept=".json,application/json" data-i="importFile" hidden></label>
     </div>
     <h2>${t('Install on iPhone')}</h2><div class="card small">${t('Open this page in <b>Safari</b>, tap <b>Share</b>, then <b>Add to Home Screen</b>. It then opens full screen and works offline on the course.')}</div>
-    <h2>${t('Data')}</h2><div class="card"><p class="muted small" style="margin-top:0">${S.courses.length} ${t('courses')} · ${S.rounds.length} ${t('rounds saved')}</p><button class="btn-block btn-danger" data-a="wipe">${t('Delete all data')}</button></div>`;
+    <h2>${t('Data')}</h2><div class="card"><p class="muted small" style="margin-top:0">${S.courses.length} ${t('courses')} · ${S.rounds.length} ${t('rounds saved')}</p><button class="btn-block btn-danger" data-a="wipe">${t('Delete all data')}</button></div>
+    <p class="muted small" style="text-align:center;margin-top:18px">Fairway v${APP_VERSION}</p>`;
 }
 
 /* ---------- export / import ---------- */
@@ -550,6 +555,12 @@ const A = {
   },
 
   /* settings */
+  async copyApiDebug() {
+    S.apiDebug = lastApiDebug() || t('No API request made yet.');
+    try { await navigator.clipboard.writeText(S.apiDebug); toast(t('Copied. Paste it in the chat.')); }
+    catch { toast(t('Select the text below and copy it.')); }
+    render();
+  },
   setUnit: d => { S.set.unit = d.v; saveSettings(); render(); },
   setLang: d => { S.set.lang = d.v; setLang(d.v); saveSettings(); render(); },
   exportJson: () => saveFile(`fairway-backup-${todayISO()}.json`,

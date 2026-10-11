@@ -1,5 +1,5 @@
 // Offline support: app shell is cached; map/search requests (other origins) always go to the network.
-const VERSION = 'fairway-v4';
+const VERSION = 'fairway-v5';
 const SHELL = [
   './', 'index.html', 'style.css', 'manifest.webmanifest',
   'js/app.js', 'js/db.js', 'js/util.js', 'js/osm.js', 'js/hole-svg.js', 'js/stats.js', 'js/i18n.js', 'js/api.js',
@@ -7,7 +7,7 @@ const SHELL = [
 ];
 
 self.addEventListener('install', e => {
-  e.waitUntil(caches.open(VERSION).then(c => c.addAll(SHELL)).then(() => self.skipWaiting()));
+  e.waitUntil(caches.open(VERSION).then(c => Promise.all(SHELL.map(u => fetch(new Request(u, { cache: 'reload' })).then(r => { if (!r.ok) throw new Error(u); return c.put(u, r); })))).then(() => self.skipWaiting()));
 });
 
 self.addEventListener('activate', e => {
@@ -27,7 +27,7 @@ self.addEventListener('fetch', e => {
   e.respondWith(
     caches.open(VERSION).then(async cache => {
       const hit = await cache.match(req, { ignoreSearch: true });
-      const net = fetch(req).then(res => {
+      const net = fetch(req, { cache: 'no-cache' }).then(res => {
         if (res && res.ok) cache.put(req, res.clone());
         return res;
       }).catch(() => null);
